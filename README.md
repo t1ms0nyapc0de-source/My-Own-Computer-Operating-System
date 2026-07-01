@@ -196,6 +196,42 @@ sequenceDiagram
 
 ---
 
+## 🚶 Code Walkthrough (Minimalist)
+
+This section maps out key source components and how they function at a code level with minimal explanation:
+
+### 1. Bootstrapping
+* **[boot.s](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/boot.s)**: Defines the Multiboot header, sets up a temporary 16KB kernel stack, and jumps to [kernel_main](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/kernel.c#L59).
+* **[linker.ld](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/linker.ld)**: Directs the linker to load the kernel binary beginning at physical address `1MB`.
+
+### 2. Privilege Segmentation & Interrupts
+* **[gdt.c](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/gdt.c)**: [gdt_init](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/gdt.c#L22) defines 5 segments (Null, Ring 0 Code/Data, Ring 3 Code/Data) plus the TSS. TSS's `esp0` stack pointer is loaded via [tss_set_kernel_stack](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/gdt.c#L50) to allow safe user-to-kernel transitions.
+* **[gdt_flush.s](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/gdt_flush.s)**: Assembler helper that loads the descriptor table (`lgdt`) and updates segment selectors.
+* **[idt.c](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/idt.c)**: [idt_init](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/idt.c#L39) registers gates for exceptions, hardware IRQs (PIC remapping to offsets 32 and 40), and syscall vector `0x80` (`DPL=3`).
+* **[isr.s](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/isr.s)**: Low-level interrupt handlers wrapping execution by saving registers, calling [isr_dispatch](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/idt.c#L120) or [irq_dispatch](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/idt.c#L136) in C, and returning via `iret`.
+
+### 3. Physical & Virtual Memory Management
+* **[pmm.c](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/pmm.c)**: [pmm_init](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/pmm.c#L40) uses a bitmap to manage physical page frames (1 bit = 4KB page). [pmm_alloc_block](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/pmm.c#L105) allocates a frame, and [pmm_free_block](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/pmm.c#L124) frees it.
+* **[vmm.c](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/vmm.c)**: [vmm_init](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/vmm.c#L79) sets up 2-level paging. [page_fault_handler](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/vmm.c#L103) intercepts faults (Exception 14).
+  * **Privilege Violation**: Halts on accessing supervisor-only page `0xD0000000`.
+  * **Demand Paging**: Catches accesses between `0x1000` and `0xC0000000`, calls [pmm_alloc_block](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/pmm.c#L105), maps virtual to physical on the fly via [vmm_map_page](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/vmm.c#L13), and resumes instruction.
+
+### 4. Multitasking & Context Switching
+* **[task.c](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/task.c)**: Manages task control blocks (`task_t`). [task_create](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/task.c#L59) creates tasks. `schedule` pops the next task from the scheduler queue.
+* **[switch.s](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/switch.s)**: `switch_task` saves current task register context, switches stack (`esp`), loads the next page directory (`cr3`), updates the TSS kernel stack, and restores register context.
+* **[timer.c](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/timer.c)**: Sets up the PIT timer at 100Hz (IRQ 0) calling `schedule` for preemptive multitasking.
+
+### 5. Ring 3 Transitions & ELF Loading
+* **[elf.c](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/elf.c)**: [elf_load](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/elf.c#L41) parses ELF files, clones the kernel page directory, maps program segments (`PT_LOAD`), allocates the user stack at `0xBFFF0000`, and returns the entry point.
+* **[user_switch.s](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/user_switch.s)**: `enter_user_mode` pushes Ring 3 stack/code selectors and addresses, executing `iret` to drop privilege levels.
+* **[syscall.c](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/syscall.c)**: Catches software interrupt `int 0x80`, transitions to Ring 0, and dispatches to system functions like `write` or `exit`.
+
+### 6. RAM Disk & File Systems
+* **[tar.c](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/tar.c)**: Parses the bootloader-loaded `initrd.tar` archive headers.
+* **[vfs.c](file:///c:/Users/Timson%20Yap/Desktop/Test%20lab/src/vfs.c)**: Abstracts read/lookup paths to route system directories via `read_fs`.
+
+---
+
 ## 🛠️ How to Compile & Run the Operating System
 
 You can compile the operating system directly on the host machine or isolate the build dependencies within a Docker container.
