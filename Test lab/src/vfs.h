@@ -1,0 +1,37 @@
+#ifndef VFS_H
+#define VFS_H
+
+#include <stdint.h>
+#include <stddef.h>
+
+#define FS_FILE        0x01
+#define FS_DIRECTORY   0x02
+
+struct fs_node;
+
+typedef uint32_t (*read_type_t)(struct fs_node*, uint32_t, uint32_t, uint8_t*);
+typedef uint32_t (*write_type_t)(struct fs_node*, uint32_t, uint32_t, uint8_t*);
+typedef void (*open_type_t)(struct fs_node*);
+typedef void (*close_type_t)(struct fs_node*);
+typedef struct fs_node* (*readdir_type_t)(struct fs_node*, uint32_t);
+typedef struct fs_node* (*finddir_type_t)(struct fs_node*, const char* name);
+
+typedef struct fs_node {
+    char name[128];
+    uint32_t flags;
+    uint32_t length;
+    uint32_t impl; // Pointer or index to driver specific data
+    read_type_t read;
+    write_type_t write;
+    open_type_t open;
+    close_type_t close;
+    readdir_type_t readdir;
+    finddir_type_t finddir;
+} fs_node_t;
+
+extern fs_node_t* fs_root;
+
+uint32_t read_fs(fs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
+fs_node_t* find_node_by_path(const char* path);
+
+#endif
